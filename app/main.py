@@ -133,3 +133,134 @@ def atualizar_disponibilidade_espaco(
     
     status_msg = "disponível" if disponivel else "indisponível"
     return {"message": f"Espaço {espaco.nome} agora está {status_msg}"}
+
+# ========== ENDPOINTS DE RESERVAS ==========
+
+@app.post("/reservas/", response_model=booking_schemas.ReservaResposta)
+def criar_reserva(
+    reserva_data: booking_schemas.ReservaCriar,
+    db: Session = Depends(get_db),
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+):
+    """
+    Criar nova reserva
+    """
+    try:
+        return booking_crud.criar_reserva(db, reserva_data, usuario_atual.id)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@app.get("/reservas/minhas", response_model=List[booking_schemas.ReservaResposta])
+def listar_minhas_reservas(
+    db: Session = Depends(get_db),
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+):
+    """
+    Listar todas as reservas do usuário logado
+    """
+    return booking_crud.obter_reservas_usuario(db, usuario_atual.id)
+
+@app.get("/reservas/{reserva_id}", response_model=booking_schemas.ReservaResposta)
+def obter_reserva(
+    reserva_id: int,
+    db: Session = Depends(get_db),
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+):
+    """
+    Obter detalhes de uma reserva específica
+    """
+    reserva = booking_crud.obter_reserva_por_id(db, reserva_id)
+    if not reserva:
+        raise HTTPException(status_code=404, detail="Reserva não encontrada")
+    
+    # Verificar se a reserva pertence ao usuário
+    if reserva.user_id != usuario_atual.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Não autorizado a acessar esta reserva"
+        )
+    
+    return reserva
+
+@app.post("/reservas/{reserva_id}/cancelar")
+def cancelar_reserva(
+    reserva_id: int,
+    db: Session = Depends(get_db),
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+):
+    """
+    Cancelar uma reserva
+    """
+    try:
+        reserva = booking_crud.cancelar_reserva(db, reserva_id, usuario_atual.id)
+        return {"message": "Reserva cancelada com sucesso", "reserva_id": reserva_id}
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@app.post("/reservas/verificar-disponibilidade")
+def verificar_disponibilidade(
+    disponibilidade: booking_schemas.VerificarDisponibilidade,
+    db: Session = Depends(get_db)
+):
+    """
+    Verificar disponibilidade de um espaço em um horário específico
+    """
+    esta_disponivel = booking_crud.verificar_disponibilidade(
+        db, 
+        disponibilidade.space_id, 
+        disponibilidade.start_time, 
+        disponibilidade.end_time
+    )
+    
+    espaco = space_crud.obter_espaco_por_id(db, disponibilidade.space_id)
+    if not espaco:
+        raise HTTPException(status_code=404, detail="Espaço não encontrado")
+    
+    return {
+        "disponivel": esta_disponivel,
+        "espaco_id": disponibilidade.space_id,
+        "espaco_nome": espaco.nome,
+        "inicio": disponibilidade.start_time,
+        "fim": disponibilidade.end_time
+    }
+
+@app.get("/espacos/{espaco_id}/reservas")
+def listar_reservas_espaco(
+    espaco_id: int,
+    inicio: str = None,
+    fim: str = None,
+    db: Session = Depends(get_db),
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+):
+    """
+    Listar reservas de um espaço em um período (requer autenticação)
+    """
+    from datetime import datetime
+    
+    espaco = space_crud.obter_espaco_por_id(db, espaco_id)
+    if not espaco:
+        raise HTTPException(status_code=404, detail="Espaço não encontrado")
+    
+    # Se não forem fornecidas datas, usa padrão (próximos 7 dias)
+    if not inicio:
+        inicio = datetime.now()
+    else:
+        inicio = datetime.fromisoformat(inicio)
+        
+    if not fim:
+        fim = datetime.now().replace(hour=23, minute=59, second=59)
+    else:
+        fim = datetime.fromisoformat(fim)
+    
+    reservas = booking_crud.obter_reservas_por_espaco(db, espaco_id, inicio, fim)
+    return reservas
