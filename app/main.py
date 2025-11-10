@@ -82,3 +82,54 @@ def obter_usuario_logado(usuario_atual: user_schemas.UsuarioResposta = Depends(o
     Obter informações do usuário logado
     """
     return usuario_atual
+
+# ========== ENDPOINTS DE ESPAÇOS ==========
+
+@app.get("/espacos/", response_model=List[space_schemas.EspacoResposta])
+def listar_espacos(
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(get_db)
+):
+    """
+    Listar todos os espaços disponíveis
+    """
+    return space_crud.obter_espacos(db, skip=skip, limit=limit)
+
+@app.get("/espacos/{espaco_id}", response_model=space_schemas.EspacoResposta)
+def obter_espaco(espaco_id: int, db: Session = Depends(get_db)):
+    """
+    Obter detalhes de um espaço específico
+    """
+    espaco = space_crud.obter_espaco_por_id(db, espaco_id)
+    if not espaco:
+        raise HTTPException(status_code=404, detail="Espaço não encontrado")
+    return espaco
+
+@app.post("/espacos/", response_model=space_schemas.EspacoResposta)
+def criar_espaco(
+    espaco_data: space_schemas.EspacoCriar,
+    db: Session = Depends(get_db),
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+):
+    """
+    Criar novo espaço (requer autenticação)
+    """
+    return space_crud.criar_espaco(db, espaco_data)
+
+@app.put("/espacos/{espaco_id}/disponibilidade")
+def atualizar_disponibilidade_espaco(
+    espaco_id: int,
+    disponivel: bool,
+    db: Session = Depends(get_db),
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+):
+    """
+    Atualizar disponibilidade de um espaço (requer autenticação)
+    """
+    espaco = space_crud.atualizar_disponibilidade_espaco(db, espaco_id, disponivel)
+    if not espaco:
+        raise HTTPException(status_code=404, detail="Espaço não encontrado")
+    
+    status_msg = "disponível" if disponivel else "indisponível"
+    return {"message": f"Espaço {espaco.nome} agora está {status_msg}"}
