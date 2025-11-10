@@ -45,3 +45,40 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "service": "booking-system"}
+
+
+# ========== ENDPOINTS DE AUTENTICAÇÃO ==========
+
+@app.post("/auth/registrar", response_model=user_schemas.UsuarioResposta)
+def registrar(usuario_data: user_schemas.UsuarioCriar, db: Session = Depends(get_db)):
+    """
+    Registrar novo usuário no sistema
+    """
+    usuario_existente = user_crud.obter_usuario_por_email(db, usuario_data.email)
+    if usuario_existente:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email já cadastrado"
+        )
+    return user_crud.criar_usuario(db, usuario_data)
+
+@app.post("/auth/login")
+def login(login_data: user_schemas.UsuarioLogin, db: Session = Depends(get_db)):
+    """
+    Fazer login e obter token de acesso
+    """
+    usuario = user_crud.autenticar_usuario(db, login_data.email, login_data.senha)
+    if not usuario:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais inválidas"
+        )
+    access_token = criar_token_acesso(data={"sub": usuario.email})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/auth/me", response_model=user_schemas.UsuarioResposta)
+def obter_usuario_logado(usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)):
+    """
+    Obter informações do usuário logado
+    """
+    return usuario_atual
