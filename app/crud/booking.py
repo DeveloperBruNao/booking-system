@@ -4,6 +4,7 @@ from app.models.booking import Booking, BookingStatus
 from app.schemas.booking import ReservaCriar
 from datetime import datetime
 from fastapi import HTTPException
+from app.crud.space import obter_espaco_por_id  # ✅ IMPORTANTE: Importar esta função
 
 def verificar_disponibilidade(db: Session, espaco_id: int, inicio: datetime, fim: datetime, reserva_id: int = None):
     """

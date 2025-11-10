@@ -7,7 +7,7 @@ from app.database import get_db, engine, Base
 from app.models import user, space, booking
 from app.schemas import user as user_schemas, space as space_schemas, booking as booking_schemas
 from app.crud import user as user_crud, space as space_crud, booking as booking_crud
-from app.auth.security import verify_token, criar_token_acesso
+from app.auth.security import obter_usuario_atual, criar_token_acesso, verificar_token
 
 # Criar tabelas no banco
 Base.metadata.create_all(bind=engine)
@@ -26,12 +26,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Dependência para obter usuário atual
-def obter_usuario_atual(token: str = Depends(verify_token), db: Session = Depends(get_db)):
-    user_email = token.get("sub")
+# Dependência para obter usuário atual (AGORA CORRIGIDA)
+def obter_usuario_logado(
+    token_data: dict = Depends(obter_usuario_atual),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtém o usuário atual a partir do token JWT
+    """
+    user_email = token_data.get("sub")
+    if not user_email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido"
+        )
+    
     usuario = user_crud.obter_usuario_por_email(db, user_email)
     if not usuario:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuário não encontrado"
+        )
+    
     return usuario
 
 @app.get("/")
@@ -45,7 +61,6 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "service": "booking-system"}
-
 
 # ========== ENDPOINTS DE AUTENTICAÇÃO ==========
 
@@ -77,7 +92,7 @@ def login(login_data: user_schemas.UsuarioLogin, db: Session = Depends(get_db)):
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/auth/me", response_model=user_schemas.UsuarioResposta)
-def obter_usuario_logado(usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)):
+def obter_usuario_logado_endpoint(usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_logado)):
     """
     Obter informações do usuário logado
     """
@@ -110,7 +125,7 @@ def obter_espaco(espaco_id: int, db: Session = Depends(get_db)):
 def criar_espaco(
     espaco_data: space_schemas.EspacoCriar,
     db: Session = Depends(get_db),
-    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_logado)
 ):
     """
     Criar novo espaço (requer autenticação)
@@ -122,7 +137,7 @@ def atualizar_disponibilidade_espaco(
     espaco_id: int,
     disponivel: bool,
     db: Session = Depends(get_db),
-    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_logado)
 ):
     """
     Atualizar disponibilidade de um espaço (requer autenticação)
@@ -140,7 +155,7 @@ def atualizar_disponibilidade_espaco(
 def criar_reserva(
     reserva_data: booking_schemas.ReservaCriar,
     db: Session = Depends(get_db),
-    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_logado)
 ):
     """
     Criar nova reserva
@@ -158,7 +173,7 @@ def criar_reserva(
 @app.get("/reservas/minhas", response_model=List[booking_schemas.ReservaResposta])
 def listar_minhas_reservas(
     db: Session = Depends(get_db),
-    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_logado)
 ):
     """
     Listar todas as reservas do usuário logado
@@ -169,7 +184,7 @@ def listar_minhas_reservas(
 def obter_reserva(
     reserva_id: int,
     db: Session = Depends(get_db),
-    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_logado)
 ):
     """
     Obter detalhes de uma reserva específica
@@ -191,7 +206,7 @@ def obter_reserva(
 def cancelar_reserva(
     reserva_id: int,
     db: Session = Depends(get_db),
-    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_logado)
 ):
     """
     Cancelar uma reserva
@@ -240,7 +255,7 @@ def listar_reservas_espaco(
     inicio: str = None,
     fim: str = None,
     db: Session = Depends(get_db),
-    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_atual)
+    usuario_atual: user_schemas.UsuarioResposta = Depends(obter_usuario_logado)
 ):
     """
     Listar reservas de um espaço em um período (requer autenticação)
